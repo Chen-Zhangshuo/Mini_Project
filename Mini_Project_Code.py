@@ -1,187 +1,259 @@
 import pandas as pd
 import numpy as np
-from scipy import stats
-import statsmodels.api as sm
-import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy.stats import linregress, ttest_ind, mannwhitneyu, chi2_contingency
+import matplotlib.pyplot as plt
+from scipy.stats import f_oneway, ttest_ind, chi2_contingency, shapiro
+import statsmodels.api as sm
 
-class DataInspection:
+class DataAnalysis:
     def __init__(self):
-        self.df = None  # DataFrame will be loaded and stored here
-        self.column_types = {}
+        # Load dataset from user input
+        file_path = input("Please enter the path to your dataset (CSV format): ")
+        self.df = pd.read_csv(file_path)
 
-    def load_csv(self, file_path):
-        """Loads the dataset from the given file path."""
-        try:
-            self.df = pd.read_csv(file_path)
-            print(f"Dataset loaded successfully from {file_path}.")
-        except FileNotFoundError:
-            raise FileNotFoundError(f"File not found: {file_path}")
-        except pd.errors.EmptyDataError:
-            raise ValueError("The file is empty.")
-        except Exception as e:
-            raise Exception(f"An error occurred while loading the file: {e}")
-        self.column_types = self.list_column_types()
+        # Automatically identify variable types
+        self.variable_types = self.classify_variable_types()
 
-    def list_column_types(self):
-        """This function will check if the type of data is numeric ordinal, non-numeric ordinal, interval, or nominal."""
-        col_types = {}
+        # Display statistics in vertical format
+        self.display_statistics()
+
+        # Start interactive session
+        self.interactive_session()
+
+    def classify_variable_types(self):
+        """Classify variables into Ratio, Nominal, or Ordinal."""
+        variable_types = {}
         for col in self.df.columns:
-            if pd.api.types.is_numeric_dtype(self.df[col]):
-                if self.df[col].nunique() > 10: 
-                    col_types[col] = 'interval'
+            unique_vals = self.df[col].nunique()
+            if self.df[col].dtype in [np.float64, np.int64]:
+                if unique_vals > 10:  # Assuming numerical variables with many unique values are Ratio
+                    variable_types[col] = "Ratio"
                 else:
-                    col_types[col] = 'ordinal'
+                    variable_types[col] = "Ordinal"
             else:
-                col_types[col] = 'nominal'
-        return col_types
+                variable_types[col] = "Nominal"  # Categorical variables
+        return variable_types
 
-    def select_variable(self, data_type, allow_skip=False):
-        available_vars = [col for col, dtype in self.column_types.items() if dtype == data_type]
-        if allow_skip and not available_vars:
-            return None
-        
-        print(f"Available {data_type} variables: {available_vars}")
-        selected_var = input(f"Please select a {data_type} variable: ").strip()
-        
-        if selected_var in available_vars:
-            return selected_var
+    def display_statistics(self):
+        """Display basic statistics for each variable in vertical format."""
+        print("\nSummary of Variables:")
+        print(f"{'Variable':<20}{'Type':<10}{'Mean / Median / Mode':<30}{'Kurtosis':<10}{'Skewness':<10}")
+        print("=" * 80)
+    
+        for col, var_type in self.variable_types.items():
+            if var_type == "Ratio":
+               mean = self.df[col].mean()
+               median = self.df[col].median()
+               mode = self.df[col].mode()[0] if not self.df[col].mode().empty else 'NA'
+               kurtosis = self.df[col].kurtosis()
+               skewness = self.df[col].skew()
+               print(f"{col:<20}{var_type:<10}{f'{mean:.2f} / {median:.2f} / {mode}':<30}{kurtosis:<10.2f}{skewness:<10.2f}")
+            else:
+               mode = self.df[col].mode()[0] if not self.df[col].mode().empty else 'NA'
+               print(f"{col:<20}{var_type:<10}{mode:<30}{'NA':<10}{'NA':<10}")
+
+    def interactive_session(self):
+        """Start an interactive session with the user."""
+        while True:
+            print("\nHow do you want to analyze your data?")
+            print("1. Plot variable distribution")
+            print("2. Conduct ANOVA (with QQ Plot)")
+            print("3. Conduct t-Test")
+            print("4. Conduct Chi-Square Test")
+            print("5. Conduct Regression")
+            print("6. Conduct Sentiment Analysis")
+            print("7. Quit")
+
+            choice = input("Enter your choice (1-7): ")
+            
+            if choice == '1':
+                self.plot_variable_distribution()
+            elif choice == '2':
+                self.conduct_anova()
+            elif choice == '3':
+                self.conduct_t_test()
+            elif choice == '4':
+                self.conduct_chi_square()
+            elif choice == '5':
+                self.conduct_regression()
+            elif choice == '6':
+                self.conduct_sentiment_analysis()
+            elif choice == '7':
+                print("Exiting the program. Goodbye!")
+                break
+            else:
+                print("Invalid choice. Please enter a number between 1 and 7.")
+
+    def plot_variable_distribution(self):
+        """Allow the user to choose variables to plot their distribution."""
+        while True:
+            print("\nFollowing variables are available for plot distribution:")
+            for idx, col in enumerate(self.df.columns, 1):
+                print(f"{idx}. {col}")
+            print("BACK")
+            print("QUIT")
+            
+            choice = input("Enter your choice: ")
+            
+            if choice.lower() == "back":
+                break
+            elif choice.lower() == "quit":
+                print("Exiting...")
+                exit()
+            else:
+                try:
+                    idx = int(choice) - 1
+                    selected_var = self.df.columns[idx]
+                    self.show_distribution_plot(selected_var)
+                except (ValueError, IndexError):
+                    print("Invalid choice, please try again.")
+
+    def show_distribution_plot(self, var):
+        """Display the appropriate distribution plot for the selected variable."""
+        var_type = self.variable_types[var]
+        plt.figure(figsize=(8, 6))
+        if var_type == "Ratio":
+            plt.hist(self.df[var].dropna(), bins=10, color='skyblue', edgecolor='black')
+            plt.title(f"Distribution plot for {var} (Histogram)")
         else:
-            print("Invalid choice.")
-            return self.select_variable(data_type, allow_skip)
-
-    def plot_qq_histogram(self, data, title):
-        plt.figure(figsize=(12, 6))
-        plt.subplot(1, 2, 1)
-        sm.qqplot(data, line='s')
-        plt.title(f'Q-Q Plot: {title}')
-
-        plt.subplot(1, 2, 2)
-        sns.histplot(data, kde=True)
-        plt.title(f'Histogram: {title}')
+            sns.boxplot(data=self.df, y=var)
+            plt.title(f"Distribution plot for {var} (Boxplot)")
         plt.show()
 
-    def check_normality(self, data, size_limit=2000):
-        data = data.dropna()
-        if len(data) < size_limit:
-            stat, p_value = stats.shapiro(data)
-            test_type = "Shapiro-Wilk Test"
+    def conduct_anova(self):
+        """Perform ANOVA analysis and display QQ plot."""
+        print("Available categorical (Nominal/Ordinal) variables:")
+        cat_vars = [var for var, vtype in self.variable_types.items() if vtype in ['Nominal', 'Ordinal']]
+        print(cat_vars)
+        cat_var = input("Select a categorical variable for ANOVA: ")
+
+        print("Available numerical (Ratio) variables:")
+        num_vars = [var for var, vtype in self.variable_types.items() if vtype == 'Ratio']
+        print(num_vars)
+        num_var = input("Select a numerical variable for ANOVA: ")
+
+        if cat_var in self.df.columns and num_var in self.df.columns:
+            groups = [self.df[self.df[cat_var] == level][num_var].dropna() for level in self.df[cat_var].unique()]
+            
+            # Normality check for each group
+            normality_results = [shapiro(group) for group in groups]
+            for i, (stat, p) in enumerate(normality_results):
+                print(f"Group '{self.df[cat_var].unique()[i]}': W = {stat:.4f}, p = {p:.4f} (Normality Test)")
+            
+            if all(p > 0.05 for _, p in normality_results):  # p > 0.05 means normal
+                print("All groups are normally distributed.")
+            else:
+                print("At least one group is not normally distributed.")
+            
+            f_stat, p_value = f_oneway(*groups)
+            print(f"ANOVA results: F = {f_stat:.4f}, p = {p_value:.4f}")
+            
+            # Generate QQ plot for normality check
+            self.plot_qq(num_var)
         else:
-            result = stats.anderson(data, dist='norm')
-            stat, p_value = result.statistic, None  # Anderson-Darling doesn't provide p-value
-            test_type = "Anderson-Darling Test"
-        
-        print(f"{test_type} - Statistic: {stat}, p-value: {p_value}")
-        return stat, p_value
+            print("Invalid selection of variables.")
 
-    def check_skewness(self, data):
-        skewness = stats.skew(data.dropna())
-        print(f"Skewness: {skewness}")
-        return np.abs(skewness) > 1
+    def plot_qq(self, variable):
+        """Generate QQ plot to check for normality."""
+        data = self.df[variable].dropna()
+        sm.qqplot(data, line='s')
+        plt.title(f"QQ Plot for {variable}")
+        plt.show()
 
-    def hypothesis_test(self, continuous_var, categorical_var, skewed):
-        data = self.df[[continuous_var, categorical_var]].dropna()
-        groups = [data[continuous_var][data[categorical_var] == g] for g in data[categorical_var].unique()]
+    def conduct_t_test(self):
+        """Perform t-Test analysis."""
+        print("Available categorical variables (with 2 unique values):")
+        cat_vars = [var for var, vtype in self.variable_types.items() if vtype in ['Nominal', 'Ordinal'] and self.df[var].nunique() == 2]
+        print(cat_vars)
+        cat_var = input("Select a categorical variable for t-Test: ")
 
-        if skewed:
-            stat, p_value = stats.kruskal(*groups)
-            test_name = "Kruskal-Wallis"
+        print("Available numerical (Ratio) variables:")
+        num_vars = [var for var, vtype in self.variable_types.items() if vtype == 'Ratio']
+        print(num_vars)
+        num_var = input("Select a numerical variable for t-Test: ")
+
+        if cat_var in self.df.columns and num_var in self.df.columns:
+            group1 = self.df[self.df[cat_var] == self.df[cat_var].unique()[0]][num_var].dropna()
+            group2 = self.df[self.df[cat_var] == self.df[cat_var].unique()[1]][num_var].dropna()
+
+            # Normality checks
+            stat1, p1 = shapiro(group1)
+            stat2, p2 = shapiro(group2)
+            print(f"Group 1: W = {stat1:.4f}, p = {p1:.4f} (Normality Test)")
+            print(f"Group 2: W = {stat2:.4f}, p = {p2:.4f} (Normality Test)")
+
+            if p1 > 0.05 and p2 > 0.05:  # Both groups are normally distributed
+                print("Both groups are normally distributed.")
+                # Perform t-Test
+                t_stat, p_value = ttest_ind(group1, group2, equal_var=False)  # Welch's t-test
+                print(f"t-Test results: t = {t_stat:.4f}, p = {p_value:.4f}")
+                
+                # Boxplot to visualize relationship
+                plt.figure(figsize=(8, 6))
+                sns.boxplot(x=self.df[cat_var], y=self.df[num_var])
+                plt.title(f"Boxplot of {num_var} by {cat_var}")
+                plt.show()
+            else:
+                print("At least one group is not normally distributed. Consider using a non-parametric test.")
         else:
-            stat, p_value = stats.f_oneway(*groups)
-            test_name = "ANOVA"
+            print("Invalid selection of variables.")
 
-        print(f"{test_name} - Statistic: {stat}, p-value: {p_value}")
-        return stat, p_value
+    def conduct_chi_square(self):
+        """Perform Chi-Square test."""
+        print("Available categorical variables:")
+        cat_vars = [var for var, vtype in self.variable_types.items() if vtype == 'Nominal']
+        print(cat_vars)
 
-    def perform_regression(self, x_var, y_var):
-        """Perform linear regression between two interval variables."""
-        X = self.df[x_var].dropna()
-        Y = self.df[y_var].dropna()
-        
-        # Ensure both variables have the same length
-        min_length = min(len(X), len(Y))
-        X = X[:min_length]
-        Y = Y[:min_length]
-        
-        slope, intercept, r_value, p_value, std_err = linregress(X, Y)
-        
-        print(f"Slope: {slope:.4f}")
-        print(f"Intercept: {intercept:.4f}")
-        print(f"R-squared: {r_value**2:.4f}")
-        print(f"P-value: {p_value:.15f}")
-        print(f"Standard error: {std_err:.4f}")
+        # Select 2 cat_var
+        cat_var1 = input("Select the first categorical variable: ")
+        cat_var2 = input("Select the second categorical variable: ")
 
-    def t_test_or_mannwhitney(self, continuous_var, categorical_var):
-        """Perform t-test or Mann-Whitney U test based on normality."""
-        data = self.df[[continuous_var, categorical_var]].dropna()
-        groups = [data[continuous_var][data[categorical_var] == g] for g in data[categorical_var].unique()]
-        
-        # Check normality
-        test_type, _, _ = self.check_normality(data[continuous_var])
-        
-        if test_type == 'Shapiro-Wilk':
-            stat, p_value = ttest_ind(*groups)
-            test_name = "t-test"
+        if cat_var1 in self.df.columns and cat_var2 in self.df.columns:
+           contingency_table = pd.crosstab(self.df[cat_var1], self.df[cat_var2])
+           chi2, p, dof, expected = chi2_contingency(contingency_table)
+           print(f"Chi-Square results: chi2 = {chi2:.4f}, p = {p:.4f}, dof = {dof}")
+
+           # Show Bar Chart
+           contingency_table.plot(kind='bar', stacked=True)
+           plt.title(f"Bar Chart of {cat_var1} vs {cat_var2}")
+           plt.xlabel(cat_var1)
+           plt.ylabel("Count")
+           plt.show()
         else:
-            stat, p_value = mannwhitneyu(*groups)
-            test_name = "Mann-Whitney U Test"
-        
-        print(f"{test_name} - Statistic: {stat:.4f}, p-value: {p_value:.15f}")
-        return stat, p_value
+           print("Invalid selection of variables.")
 
-    def chi_square_test(self, categorical_var_1, categorical_var_2):
-        """Perform Chi-square test between two categorical variables."""
-        contingency_table = pd.crosstab(self.df[categorical_var_1], self.df[categorical_var_2])
-        chi2, p, dof, expected = chi2_contingency(contingency_table)
-        
-        print(f"chi2 = {chi2:.4f}, p-value = {p:.15f}, dof = {dof}")
-        return chi2, p, dof, expected
+    def conduct_regression(self):
+        """Conduct a regression analysis."""
+        print("Available dependent (Ratio) variables:")
+        dep_vars = [var for var, vtype in self.variable_types.items() if vtype == 'Ratio']
+        print(dep_vars)
+        dep_var = input("Select a dependent variable for regression: ")
 
-def main():
-    analysis = DataInspection()
-    file_path = input("Enter the path to the dataset (CSV file): ")
-    analysis.load_csv(file_path)
+        print("Available independent (Ratio) variables:")
+        indep_vars = [var for var, vtype in self.variable_types.items() if vtype == 'Ratio' and var != dep_var]
+        print(indep_vars)
+        indep_var = input("Select an independent variable for regression: ")
 
-    continuous_var = analysis.select_variable("interval")
-    data = analysis.df[continuous_var]
+        if dep_var in self.df.columns and indep_var in self.df.columns:
+            X = self.df[[indep_var]]
+            y = self.df[dep_var]
+            model = sm.OLS(y, sm.add_constant(X)).fit()
+            print(model.summary())
 
-    stat, p_value = analysis.check_normality(data)
-    analysis.plot_qq_histogram(data, continuous_var)
-
-    categorical_var = analysis.select_variable("nominal")
-    skewed = analysis.check_skewness(data)
-
-    null_hyp = input("Enter the null hypothesis: ")
-    analysis.hypothesis_test(continuous_var, categorical_var, skewed)
-
-    while True:
-        print("\nSelect a test to perform:")
-        print("1. t-test or Mann-Whitney U Test")
-        print("2. Chi-square Test")
-        print("3. Linear Regression")
-        print("4. Exit")
-        choice = input("Enter your choice: ").strip()
-
-        if choice == '1':
-            continuous_var = analysis.select_variable("interval")
-            categorical_var = analysis.select_variable("nominal", max_categories=2)
-            if continuous_var and categorical_var:
-                analysis.t_test_or_mannwhitney(continuous_var, categorical_var)
-        elif choice == '2':
-            categorical_var_1 = analysis.select_variable("nominal")
-            categorical_var_2 = analysis.select_variable("nominal")
-            if categorical_var_1 and categorical_var_2:
-                analysis.chi_square_test(categorical_var_1, categorical_var_2)
-        elif choice == '3':
-            x_var = analysis.select_variable("interval")
-            y_var = analysis.select_variable("interval")
-            if x_var and y_var:
-                analysis.perform_regression(x_var, y_var)
-        elif choice == '4':
-            break
+            # Scatter plot to visualize relationship
+            plt.figure(figsize=(8, 6))
+            plt.scatter(self.df[indep_var], self.df[dep_var], alpha=0.6)
+            plt.title(f"Scatter Plot of {dep_var} vs {indep_var}")
+            plt.xlabel(indep_var)
+            plt.ylabel(dep_var)
+            plt.plot(X, model.predict(sm.add_constant(X)), color='red', linewidth=2)  # regression line
+            plt.show()
         else:
-            print("Invalid choice, please try again.")
+            print("Invalid selection of variables.")
+
+    def conduct_sentiment_analysis(self):
+        """Placeholder for sentiment analysis method."""
+        print("Sentiment analysis is not implemented yet.")
 
 if __name__ == "__main__":
-    main()
+    DataAnalysis()
