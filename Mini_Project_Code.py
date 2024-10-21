@@ -4,6 +4,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy.stats import f_oneway, ttest_ind, chi2_contingency, shapiro
 import statsmodels.api as sm
+import matplotlib.pyplot as plt
+from scipy import stats
 
 class DataAnalysis:
     def __init__(self):
@@ -26,7 +28,7 @@ class DataAnalysis:
         for col in self.df.columns:
             unique_vals = self.df[col].nunique()
             if self.df[col].dtype in [np.float64, np.int64]:
-                if unique_vals > 10:  # Assuming numerical variables with many unique values are Ratio
+                if unique_vals > 2:  # Assuming numerical variables with many unique values are Ratio
                     variable_types[col] = "Ratio"
                 else:
                     variable_types[col] = "Ordinal"
@@ -153,11 +155,59 @@ class DataAnalysis:
         else:
             print("Invalid selection of variables.")
 
-    def plot_qq(self, variable):
-        """Generate QQ plot to check for normality."""
-        data = self.df[variable].dropna()
-        sm.qqplot(data, line='s')
-        plt.title(f"QQ Plot for {variable}")
+    def conduct_anova(self):
+        """Perform ANOVA analysis, check for normality using Shapiro-Wilk, and display QQ plot."""
+        # Prompt user to select categorical and numerical variables for ANOVA
+        print("Available categorical (Nominal/Ordinal) variables:")
+        cat_vars = [var for var, vtype in self.variable_types.items() if vtype in ['Nominal', 'Ordinal']]
+        print(cat_vars)
+        cat_var = input("Select a categorical variable for ANOVA: ")
+
+        print("Available numerical (Ratio) variables:")
+        num_vars = [var for var, vtype in self.variable_types.items() if vtype == 'Ratio']
+        print(num_vars)
+        num_var = input("Select a numerical variable for ANOVA: ")
+
+        if cat_var in self.df.columns and num_var in self.df.columns:
+            # Separate the data into groups based on the categorical variable
+            groups = [self.df[self.df[cat_var] == level][num_var].dropna() for level in self.df[cat_var].unique()]
+
+            # Normality check for each group using Shapiro-Wilk test
+            print("\nNormality Test (Shapiro-Wilk) Results:")
+            normality_results = [stats.shapiro(group) for group in groups]
+            for i, (stat, p) in enumerate(normality_results):
+                print(f"Group '{self.df[cat_var].unique()[i]}': W = {stat:.4f}, p = {p:.4f}")
+            
+            # Determine if all groups are normally distributed
+            if all(p > 0.05 for _, p in normality_results):  # p > 0.05 means normally distributed
+                print("All groups are normally distributed.")
+            else:
+                print("At least one group is not normally distributed.")
+
+            # Perform ANOVA test
+            f_stat, p_value = f_oneway(*groups)
+            print(f"\nANOVA results: F = {f_stat:.4f}, p = {p_value:.4f}")
+
+            # Display QQ plot for residuals
+            self.plot_qq(num_var)
+        else:
+            print("Invalid selection of variables.")
+
+    def plot_qq(self, num_var):
+        """Generate QQ plot and histogram for normality check."""
+        plt.figure(figsize=(12, 6))
+
+        # QQ plot on the left
+        plt.subplot(1, 2, 1)
+        stats.probplot(self.df[num_var].dropna(), dist="norm", plot=plt)
+        plt.title(f"QQ Plot for {num_var}")
+
+        # Histogram with KDE on the right
+        plt.subplot(1, 2, 2)
+        sns.histplot(self.df[num_var].dropna(), kde=True)
+        plt.title(f"Histogram for {num_var}")
+
+        # Show the plots
         plt.show()
 
     def conduct_t_test(self):
